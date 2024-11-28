@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Command,
   CommandEmpty,
@@ -18,8 +19,8 @@ import { cn } from "@/lib/utils";
 import { RoutesResponse } from "@/RouteManager/RouteManager";
 import { faker } from "@faker-js/faker";
 import axios from "axios";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { useReducer, useState } from "react";
+import { Check, ChevronsUpDown, Lock, TriangleAlert } from "lucide-react";
+import { useEffect, useReducer, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -44,9 +45,55 @@ type Action =
       type: "EDIT_FIELD";
       payload: { id: string; name: string; method: string };
     }
-  | { type: "REMOVE_FIELD"; payload: { id: string } };
+  | { type: "REMOVE_FIELD"; payload: { id: string } }
+  | { type: "CLEAR_FIELDS" };
 
 const Routes = ({ selectedRoute }: Props) => {
+  const [isRemoveEnabled, setIsRemoveEnabled] = useState(false);
+
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      try {
+        const { data } = await axios.get<RoutesResponse[]>(
+          `http://localhost:3000/routes`
+        );
+
+        const routeConfig = data.find((route) => route.id === selectedRoute.id);
+        console.log("LOG | fetchRoutes | routeConfig:", routeConfig);
+
+        // Response is {"a":"internet.username","b":"person.fullName","c":"internet.email"}
+        // map it as [{name: "a", method: "internet.username"}, {name: "b", method: "person.fullName"}, {name: "c", method: "internet.email"}]
+        const formattedConfig = JSON.parse(routeConfig?.responseConfig!);
+
+        if (formattedConfig) {
+          // clear all fields
+          dispatch({ type: "CLEAR_FIELDS" });
+
+          const formattedFields = Object.entries(formattedConfig).map(
+            ([name, method]) => ({
+              id: Math.random().toString(36).substring(7),
+              name,
+              method,
+              value: name,
+              open: false,
+            })
+          );
+          console.log("LOG | fetchRoutes | formattedFields:", formattedFields);
+
+          // add every field to the formFields state
+          formattedFields.forEach((field) => {
+            addField(field.name, field.method as string);
+          });
+        }
+      } catch (error) {
+        dispatch({ type: "CLEAR_FIELDS" });
+        console.error("Error fetching routes:", error);
+      }
+    };
+
+    fetchRoutes();
+  }, [selectedRoute]);
+
   const getFakerMethodsByCategory = (): {
     category: string;
     methods: string[];
@@ -87,7 +134,10 @@ const Routes = ({ selectedRoute }: Props) => {
   }));
 
   const categories = capitalizedMethods.filter(
-    (category) => category.category !== "_randomizer"
+    (category) =>
+      category.category !== "_randomizer" &&
+      category.category !== "helpers" &&
+      category.category !== "airline"
   );
 
   const unifiedMethods = categories.flatMap((category) =>
@@ -96,7 +146,6 @@ const Routes = ({ selectedRoute }: Props) => {
       value: `${category.category}.${camelCase(method)}`,
     }))
   );
-  console.log("LOG | unifiedMethods:", unifiedMethods);
 
   const formFieldsReducer = (
     state: {
@@ -121,6 +170,9 @@ const Routes = ({ selectedRoute }: Props) => {
 
       case "REMOVE_FIELD":
         return state.filter((field) => field.id !== action.payload?.id);
+
+      case "CLEAR_FIELDS":
+        return [];
 
       default:
         return state;
@@ -245,7 +297,36 @@ const Routes = ({ selectedRoute }: Props) => {
 
   return (
     <div className='p-4 pl-8 w-full max-w-[920px]'>
-      <h1 className='text-3xl font-semibold'>Route: {selectedRoute.path}</h1>
+      <div className='flex items-center justify-between'>
+        <h1 className='text-3xl font-semibold'>Route: {selectedRoute.path}</h1>
+
+        {/* remove route */}
+        <div className='flex space-x-4'>
+          {!isRemoveEnabled && (
+            <Button
+              variant='outline'
+              className='mt-4 border-red-500'
+              onClick={() => setIsRemoveEnabled(true)}
+            >
+              <Lock className='mr-2' />
+              Remove route
+            </Button>
+          )}
+
+          {isRemoveEnabled && (
+            <Button
+              variant='destructive'
+              className='mt-4'
+              onClick={() => {
+                axios.delete(`http://localhost:3000/api/${selectedRoute.id}`);
+              }}
+            >
+              <TriangleAlert className='mr-2' />
+              Confirm remove
+            </Button>
+          )}
+        </div>
+      </div>
 
       <h1 className='text-xl font-semibold mt-8 mb-4'>Configure response</h1>
 
@@ -345,6 +426,12 @@ const Routes = ({ selectedRoute }: Props) => {
           </div>
         ))}
 
+        {!formFields.length && (
+          <Card className='w-full max-w-[300px] py-6'>
+            <p className='text-center'>No fields added yet.</p>
+          </Card>
+        )}
+
         <Button
           variant='secondary'
           type='button'
@@ -355,50 +442,56 @@ const Routes = ({ selectedRoute }: Props) => {
         </Button>
       </div>
 
-      <h1 className='text-xl font-semibold mt-8'>Response example</h1>
+      {Object.keys(formattedJsonConfig).length > 0 && (
+        <>
+          <h1 className='text-xl font-semibold mt-8'>Response example</h1>
 
-      <SyntaxHighlighter
-        language='json'
-        style={nord}
-      >
-        {JSON.stringify(
-          Object.fromEntries(
-            Object.entries(formattedJsonConfig).map(([key, value]) => {
-              const [category, method] = value.split(".");
-              if (!category || !method) return [key, null];
-              return [
-                key,
-                (
-                  faker as unknown as Record<
-                    string,
-                    Record<string, () => unknown>
-                  >
-                )[category]?.[method]?.() ?? null,
-              ];
-            })
-          ),
-          null,
-          2
-        )}
-      </SyntaxHighlighter>
+          <SyntaxHighlighter
+            language='json'
+            style={nord}
+          >
+            {JSON.stringify(
+              Object.fromEntries(
+                Object.entries(formattedJsonConfig).map(([key, value]) => {
+                  const [category, method] = value.split(".");
+                  if (!category || !method) return [key, null];
+                  return [
+                    key,
+                    (
+                      faker as unknown as Record<
+                        string,
+                        Record<string, () => unknown>
+                      >
+                    )[category]?.[method]?.() ?? null,
+                  ];
+                })
+              ),
+              null,
+              2
+            )}
+          </SyntaxHighlighter>
+        </>
+      )}
 
       {/* <h1 className='text-xl font-semibold mt-8'>JSON Configuration</h1> */}
 
-      <textarea
+      {/* <textarea
         value={JSON.stringify(formattedJsonConfig, null, 2)}
         onChange={(e) => setJsonFormConfig(e.target.value)}
         rows={10}
         className='w-full mt-4 p-2 border rounded'
-      ></textarea>
+      ></textarea> */}
 
-      <Button
-        onClick={handleUpdate}
-        className='ml-auto mt-4 w-full'
-        variant='default'
-      >
-        Update route
-      </Button>
-
+      {Object.keys(formattedJsonConfig).length > 0 && (
+        <Button
+          onClick={handleUpdate}
+          className='ml-auto mt-4 w-full'
+          variant='default'
+        >
+          Update route
+        </Button>
+      )}
+      {/* 
       <h1 className='text-xl font-semibold mt-8'>Generated Data</h1>
 
       <SyntaxHighlighter
@@ -406,7 +499,7 @@ const Routes = ({ selectedRoute }: Props) => {
         style={nord}
       >
         {JSON.stringify(responseData, null, 2)}
-      </SyntaxHighlighter>
+      </SyntaxHighlighter> */}
     </div>
   );
 };

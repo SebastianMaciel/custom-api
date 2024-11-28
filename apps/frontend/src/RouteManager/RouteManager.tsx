@@ -10,17 +10,12 @@ import {
 import axios from "axios";
 import React, { useState } from "react";
 
-type CreateRoute = {
-  path: string;
-  response: string;
-  method: string;
-};
-
 export type RoutesResponse = {
   id: number;
+  method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
-  response: string;
-  method: string;
+  responseConfig: string;
+  seedConfig: string;
 };
 
 type Props = {
@@ -30,14 +25,17 @@ type Props = {
 const RouteManager = ({ close }: Props) => {
   const [path, setPath] = useState("");
   const [method, setMethod] = useState("");
-  const [response, setResponse] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newRoute = { path, method, response };
 
     try {
-      await axios.post<CreateRoute>("http://localhost:3000/api/", newRoute);
+      await axios.post("http://localhost:3000/api", {
+        path: path,
+        method: method,
+        responseConfig: '{"example_field":"animal.dog"}',
+        seedConfig: '{"example_field":"animal.dog"}',
+      });
 
       close();
     } catch (error) {
@@ -78,14 +76,6 @@ const RouteManager = ({ close }: Props) => {
             </SelectContent>
           </Select>
 
-          <Input
-            type='text'
-            placeholder='Response'
-            value={response}
-            onChange={(e) => setResponse(e.target.value)}
-            className='w-full'
-          />
-
           <Button
             type='submit'
             className='w-full'
@@ -94,15 +84,6 @@ const RouteManager = ({ close }: Props) => {
           </Button>
         </form>
       </div>
-
-      {response && (
-        <div className='mt-8'>
-          <h3 className='text-lg'>Generated Response</h3>
-          <div className='p-4 rounded-md border'>
-            <p>{response}</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

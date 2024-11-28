@@ -17,8 +17,8 @@ export function ModeToggle() {
     };
 
     const modes = {
-      light: "Claro",
-      dark: "Oscuro",
+      light: "Light",
+      dark: "Dark",
     };
 
     return (

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import { ModeToggle } from "./components/mode-toggle";
 import { Button } from "./components/ui/button";
+import { Card } from "./components/ui/card";
 import RouteManager, { RoutesResponse } from "./RouteManager/RouteManager";
 import Routes from "./Routes/Routes";
 
@@ -27,6 +28,7 @@ function App() {
         const { data } = await axios.get<RoutesResponse[]>(
           "http://localhost:3000/api"
         );
+        console.log("LOG | fetchRoutes | data:", data);
 
         setRoutes(data);
       } catch (error) {
@@ -38,29 +40,35 @@ function App() {
   }, [setRoutes, isAddingNewRoute]);
 
   return (
-    <div className='flex'>
+    <div className='flex h-screen'>
       <div className='flex'>
-        <div className='w-64 border-gray-600 border-r-[1px] p-4'>
-          <div className=' ml-auto'>
+        <div className='w-72 border-gray-600 border-r-[1px] p-8'>
+          <div className='flex justify-between mb-2'>
+            <div className='flex text-xl h-16 font-bold'>CustomAPI</div>
             <ModeToggle />
           </div>
-          <div className='flex text-xl h-16 font-bold'>YoukiAPI</div>
+
+          <div className='flex font-thin mb-2 mt-4'>Options</div>
 
           <Button
-            variant={isAddingNewRoute ? "secondary" : "default"}
+            variant={isAddingNewRoute ? "default" : "outline"}
             className='w-full mb-2'
             onClick={handleAddNewRoute}
           >
             Add new route
           </Button>
 
-          <div className='flex font-thin mb-2'>Routes</div>
+          <div className='flex font-thin mb-2 mt-8'>Routes</div>
+
+          {!routes.length && (
+            <Card className='w-full p-4 text-center'>No routes found</Card>
+          )}
 
           {routes.map((route) => (
             <Button
               key={route.id}
               className='w-full mb-2'
-              variant={selectedRoute === route ? "secondary" : "default"}
+              variant={selectedRoute === route ? "default" : "outline"}
               onClick={() => viewRoute(route)}
             >
               {route.path} ({route.method})
