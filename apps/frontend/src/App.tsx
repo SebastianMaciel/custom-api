@@ -1,6 +1,7 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
 import "./App.css";
+import { ModeToggle } from "./components/mode-toggle";
 import { Button } from "./components/ui/button";
 import RouteManager, { RoutesResponse } from "./RouteManager/RouteManager";
 import Routes from "./Routes/Routes";
@@ -39,7 +40,10 @@ function App() {
   return (
     <div className='flex'>
       <div className='flex'>
-        <div className='w-64 border-r border-gray-200 p-4'>
+        <div className='w-64 border-gray-600 border-r-[1px] p-4'>
+          <div className=' ml-auto'>
+            <ModeToggle />
+          </div>
           <div className='flex text-xl h-16 font-bold'>YoukiAPI</div>
 
           <Button

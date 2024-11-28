@@ -23,6 +23,12 @@ import { useReducer, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
 
+const camelCase = (str: string) =>
+  str
+    .replace(/\s(.)/g, ($1) => $1.toUpperCase())
+    .replace(/\s/g, "")
+    .replace(/^(.)/, ($1) => $1.toLowerCase());
+
 export type RoutesData = {
   id: number;
   name: string;
@@ -71,7 +77,6 @@ const Routes = ({ selectedRoute }: Props) => {
     a.category.localeCompare(b.category)
   );
 
-  // change from camelCase methods to separation by spaces and the first letter in uppercase. From "firstName" to "First Name"
   const capitalizedMethods = alphabethicalCategories.map((category) => ({
     category: category.category,
     methods: category.methods.map((method) =>
@@ -85,15 +90,22 @@ const Routes = ({ selectedRoute }: Props) => {
     (category) => category.category !== "_randomizer"
   );
 
-  // a method for taking the method name like First Name and converting it to camelCase like firstName
-  const camelCase = (str: string) =>
-    str
-      .replace(/\s(.)/g, ($1) => $1.toUpperCase())
-      .replace(/\s/g, "")
-      .replace(/^(.)/, ($1) => $1.toLowerCase());
+  const unifiedMethods = categories.flatMap((category) =>
+    category.methods.map((method) => ({
+      label: `${category.category.toUpperCase()} | ${method}`,
+      value: `${category.category}.${camelCase(method)}`,
+    }))
+  );
+  console.log("LOG | unifiedMethods:", unifiedMethods);
 
   const formFieldsReducer = (
-    state: { id: string; name: string; method: string }[],
+    state: {
+      id: string;
+      name: string;
+      method: string;
+      value: string;
+      open: boolean;
+    }[],
     action: Action
   ) => {
     switch (action.type) {
@@ -115,13 +127,7 @@ const Routes = ({ selectedRoute }: Props) => {
     }
   };
 
-  const [formFields, dispatch] = useReducer(formFieldsReducer, [
-    {
-      id: "1",
-      name: "username",
-      method: "person.firstName",
-    },
-  ]);
+  const [formFields, dispatch] = useReducer(formFieldsReducer, []);
 
   const addField = (name: string, method: string) => {
     const randomId = Math.random().toString(36).substring(7);
@@ -132,17 +138,27 @@ const Routes = ({ selectedRoute }: Props) => {
         id: randomId,
         name,
         method,
+        value: "",
+        open: false,
       },
     });
   };
 
-  const editField = (id: string, name: string, method: string) => {
+  const editField = (
+    id: string,
+    name?: string,
+    method?: string,
+    value?: string,
+    open?: boolean
+  ) => {
     dispatch({
       type: "EDIT_FIELD",
       payload: {
         id,
-        name,
-        method,
+        ...(name !== undefined && { name }),
+        ...(method !== undefined && { method }),
+        ...(value !== undefined && { value }),
+        ...(open !== undefined && { open }),
       },
     });
   };
@@ -162,43 +178,40 @@ const Routes = ({ selectedRoute }: Props) => {
 
   const [responseData, setResponseData] = useState<any[]>([]);
 
-  const [jsonConfig, setJsonConfig] = useState<string>(
-    JSON.stringify(
-      {
-        _id: "string.uuid",
-        avatar: "image.avatar",
-        birthday: "date.birthdate",
-        email: "internet.email",
-        firstName: "person.firstName",
-        lastName: "person.lastName",
-        sex: "person.sexType",
-        // subscriptionTier: "helpers.arrayElement(['free', 'basic', 'business'])",
-        // TODO: Probar de enviar un array de strings, con el método y las opciones:
-        subscriptionTier: [
-          "helpers.arrayElement",
-          '["free", "basic", "business"]',
-        ],
-      },
-      null,
-      2
-    )
-  );
-
   const [jsonFormConfig, setJsonFormConfig] = useState<string>();
 
-  const formattedJsonConfig = formFields.reduce<Record<string, string>>(
-    (acc, field) => {
+  interface FormField {
+    id: string;
+    name: string;
+    method: string;
+    value: string;
+    open: boolean;
+  }
+
+  interface FormattedJsonConfig {
+    [key: string]: string;
+  }
+
+  const formattedJsonConfig: FormattedJsonConfig = formFields.reduce(
+    (acc: FormattedJsonConfig, field: FormField) => {
       acc[field.name] = field.method;
       return acc;
     },
-    {}
+    {} as FormattedJsonConfig
   );
 
   const handleSubmit = async () => {
+    const routeConfig = {
+      path: "/clients",
+      method: "GET",
+      responseConfig: JSON.stringify(formattedJsonConfig),
+      seedConfig: JSON.stringify(formattedJsonConfig),
+    };
+
     try {
       const response = await axios.post(
-        "http://localhost:3000/api/generate-data",
-        formattedJsonConfig
+        "http://localhost:3000/api",
+        routeConfig
       );
 
       setResponseData(response.data);
@@ -207,8 +220,28 @@ const Routes = ({ selectedRoute }: Props) => {
     }
   };
 
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const handleUpdate = async () => {
+    const routeConfig = {
+      path: selectedRoute.path,
+      method: selectedRoute.method,
+      responseConfig: JSON.stringify(formattedJsonConfig),
+      seedConfig: JSON.stringify(formattedJsonConfig),
+    };
+
+    try {
+      const response = await axios.put(
+        `http://localhost:3000/api/${selectedRoute.id}`,
+        routeConfig
+      );
+
+      setResponseData(response.data);
+    } catch (error) {
+      console.error("Error generating data:", error);
+    }
+  };
+
+  // const [open, setOpen] = useState(false);
+  // const [value, setValue] = useState("");
 
   return (
     <div className='p-4 pl-8 w-full max-w-[920px]'>
@@ -235,76 +268,64 @@ const Routes = ({ selectedRoute }: Props) => {
 
             <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
               <Label htmlFor={`method-${field.id}`}>Method</Label>
-              {/* <Input
-                type='text'
-                onChange={(e) =>
-                  editField(field.id, field.name, e.target.value)
-                }
-                value={field.method}
-              /> */}
 
               <Popover
-                open={open}
-                onOpenChange={setOpen}
+                open={field.open}
+                onOpenChange={(isOpen) =>
+                  editField(field.id, undefined, undefined, undefined, isOpen)
+                }
               >
                 <PopoverTrigger asChild>
                   <Button
                     variant='secondary'
                     role='combobox'
-                    aria-expanded={open}
+                    aria-expanded={field.open}
                     className='max-w-[300px] justify-between'
                   >
-                    {value
-                      ? categories
-                          .flatMap((category) => category.methods)
-                          .find((method) => method === value)
+                    {field.value
+                      ? unifiedMethods.find(
+                          (method) => method.value === field.value
+                        )?.label
                       : "Select method..."}
                     <ChevronsUpDown className='opacity-50' />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className='w-[200px] p-0'>
+                <PopoverContent className='w-[300px] p-0'>
                   <Command>
-                    <CommandInput placeholder='Search framework...' />
+                    <CommandInput placeholder='Search method...' />
                     <CommandList>
-                      <CommandEmpty>No framework found.</CommandEmpty>
+                      <CommandEmpty>No method found.</CommandEmpty>
+
                       <CommandGroup>
-                        {categories.map((category) => (
-                          <CommandGroup
-                            key={category.category}
-                            heading={category.category}
+                        {unifiedMethods.map((method) => (
+                          <CommandItem
+                            key={method.value}
+                            value={method.value}
+                            onSelect={(currentValue) => {
+                              const newValue =
+                                currentValue === field.value
+                                  ? ""
+                                  : currentValue;
+
+                              editField(
+                                field.id,
+                                field.name,
+                                method.value,
+                                newValue,
+                                false
+                              );
+                            }}
                           >
-                            {category.methods.map((method) => (
-                              <CommandItem
-                                key={method}
-                                value={method}
-                                onSelect={(currentValue) => {
-                                  setValue(
-                                    currentValue === value ? "" : currentValue
-                                  );
-
-                                  editField(
-                                    field.id,
-                                    field.name,
-                                    `${category.category}.${camelCase(
-                                      currentValue
-                                    )}`
-                                  );
-
-                                  setOpen(false);
-                                }}
-                              >
-                                {method}
-                                <Check
-                                  className={cn(
-                                    "ml-auto",
-                                    value === method
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
+                            {method.label}
+                            <Check
+                              className={cn(
+                                "ml-auto",
+                                field.value === method.value
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                          </CommandItem>
                         ))}
                       </CommandGroup>
                     </CommandList>
@@ -337,13 +358,14 @@ const Routes = ({ selectedRoute }: Props) => {
       <h1 className='text-xl font-semibold mt-8'>Response example</h1>
 
       <SyntaxHighlighter
-        language='javascript'
+        language='json'
         style={nord}
       >
         {JSON.stringify(
           Object.fromEntries(
             Object.entries(formattedJsonConfig).map(([key, value]) => {
               const [category, method] = value.split(".");
+              if (!category || !method) return [key, null];
               return [
                 key,
                 (
@@ -351,7 +373,7 @@ const Routes = ({ selectedRoute }: Props) => {
                     string,
                     Record<string, () => unknown>
                   >
-                )[category][method]() as unknown,
+                )[category]?.[method]?.() ?? null,
               ];
             })
           ),
@@ -360,7 +382,7 @@ const Routes = ({ selectedRoute }: Props) => {
         )}
       </SyntaxHighlighter>
 
-      <h1 className='text-xl font-semibold mt-8'>JSON Configuration</h1>
+      {/* <h1 className='text-xl font-semibold mt-8'>JSON Configuration</h1> */}
 
       <textarea
         value={JSON.stringify(formattedJsonConfig, null, 2)}
@@ -370,17 +392,17 @@ const Routes = ({ selectedRoute }: Props) => {
       ></textarea>
 
       <Button
-        onClick={handleSubmit}
+        onClick={handleUpdate}
         className='ml-auto mt-4 w-full'
-        variant='secondary'
+        variant='default'
       >
-        Generate Data
+        Update route
       </Button>
 
       <h1 className='text-xl font-semibold mt-8'>Generated Data</h1>
 
       <SyntaxHighlighter
-        language='javascript'
+        language='json'
         style={nord}
       >
         {JSON.stringify(responseData, null, 2)}
