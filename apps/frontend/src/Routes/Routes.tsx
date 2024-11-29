@@ -19,10 +19,44 @@ import { cn } from "@/lib/utils";
 import { RoutesResponse } from "@/RouteManager/RouteManager";
 import { faker } from "@faker-js/faker";
 import axios from "axios";
-import { Check, ChevronsUpDown, Lock, TriangleAlert } from "lucide-react";
-import { useEffect, useReducer, useState } from "react";
+import { Check, ChevronsUpDown, Lock, LockOpen } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
+
+export function useClickAway(cb) {
+  const ref = useRef(null);
+  const refCb = useRef(cb);
+
+  useLayoutEffect(() => {
+    refCb.current = cb;
+  });
+
+  useEffect(() => {
+    const handler = (e) => {
+      const element = ref.current;
+      if (element && !element.contains(e.target)) {
+        refCb.current(e);
+      }
+    };
+
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, []);
+
+  return ref;
+}
 
 const camelCase = (str: string) =>
   str
@@ -40,16 +74,29 @@ type Props = {
 };
 
 type Action =
-  | { type: "ADD_FIELD"; payload: { id: string; name: string; method: string } }
+  | {
+      type: "ADD_FIELD";
+      payload: {
+        id: string;
+        name: string;
+        method: string;
+        value: string;
+        open: boolean;
+      };
+    }
   | {
       type: "EDIT_FIELD";
-      payload: { id: string; name: string; method: string };
+      payload: { id: string; name: string; method: string; value: string };
     }
   | { type: "REMOVE_FIELD"; payload: { id: string } }
   | { type: "CLEAR_FIELDS" };
 
 const Routes = ({ selectedRoute }: Props) => {
   const [isRemoveEnabled, setIsRemoveEnabled] = useState(false);
+
+  const ref = useClickAway(() => {
+    setIsRemoveEnabled(false);
+  });
 
   useEffect(() => {
     const fetchRoutes = async () => {
@@ -82,7 +129,7 @@ const Routes = ({ selectedRoute }: Props) => {
 
           // add every field to the formFields state
           formattedFields.forEach((field) => {
-            addField(field.name, field.method as string);
+            dispatch({ type: "ADD_FIELD", payload: field });
           });
         }
       } catch (error) {
@@ -224,14 +271,6 @@ const Routes = ({ selectedRoute }: Props) => {
     });
   };
 
-  const [response, setResponse] = useState<
-    string | RoutesData | RoutesData[] | null
-  >(null);
-
-  const [responseData, setResponseData] = useState<any[]>([]);
-
-  const [jsonFormConfig, setJsonFormConfig] = useState<string>();
-
   interface FormField {
     id: string;
     name: string;
@@ -252,26 +291,6 @@ const Routes = ({ selectedRoute }: Props) => {
     {} as FormattedJsonConfig
   );
 
-  const handleSubmit = async () => {
-    const routeConfig = {
-      path: "/clients",
-      method: "GET",
-      responseConfig: JSON.stringify(formattedJsonConfig),
-      seedConfig: JSON.stringify(formattedJsonConfig),
-    };
-
-    try {
-      const response = await axios.post(
-        "http://localhost:3000/api",
-        routeConfig
-      );
-
-      setResponseData(response.data);
-    } catch (error) {
-      console.error("Error generating data:", error);
-    }
-  };
-
   const handleUpdate = async () => {
     const routeConfig = {
       path: selectedRoute.path,
@@ -281,12 +300,10 @@ const Routes = ({ selectedRoute }: Props) => {
     };
 
     try {
-      const response = await axios.put(
+      await axios.put(
         `http://localhost:3000/api/${selectedRoute.id}`,
         routeConfig
       );
-
-      setResponseData(response.data);
     } catch (error) {
       console.error("Error generating data:", error);
     }
@@ -301,14 +318,53 @@ const Routes = ({ selectedRoute }: Props) => {
         <h1 className='text-3xl font-semibold'>Route: {selectedRoute.path}</h1>
 
         {/* remove route */}
-        <div className='flex space-x-4'>
+        <div className='flex'>
+          <div
+            ref={ref}
+            className='inline-flex -space-x-px divide-x rounded-lg shadow-sm divide-primary-foreground/30 shadow-black/5 rtl:space-x-reverse'
+          >
+            <Button
+              className='rounded-none shadow-none first:rounded-s-lg last:rounded-e-lg focus-visible:z-10'
+              size='icon'
+              variant={isRemoveEnabled ? "secondary" : "destructive"}
+              aria-label='QR code'
+              onClick={() => setIsRemoveEnabled(!isRemoveEnabled)}
+            >
+              {!isRemoveEnabled && (
+                <Lock
+                  size={16}
+                  strokeWidth={2}
+                  aria-hidden='true'
+                />
+              )}
+
+              {isRemoveEnabled && (
+                <LockOpen
+                  size={16}
+                  strokeWidth={2}
+                  aria-hidden='true'
+                />
+              )}
+            </Button>
+            <Button
+              disabled={!isRemoveEnabled}
+              className='rounded-none shadow-none first:rounded-s-lg last:rounded-e-lg focus-visible:z-10'
+              variant={isRemoveEnabled ? "destructive" : "secondary"}
+              onClick={() => {
+                axios.delete(`http://localhost:3000/api/${selectedRoute.id}`);
+              }}
+            >
+              Remove route
+            </Button>
+          </div>
+          {/* 
           {!isRemoveEnabled && (
             <Button
               variant='outline'
-              className='mt-4 border-red-500'
+              className='p-3 mt-4 border-red-500'
               onClick={() => setIsRemoveEnabled(true)}
             >
-              <Lock className='mr-2' />
+              <Lock className='' />
               Remove route
             </Button>
           )}
@@ -324,107 +380,110 @@ const Routes = ({ selectedRoute }: Props) => {
               <TriangleAlert className='mr-2' />
               Confirm remove
             </Button>
-          )}
+          )} */}
         </div>
       </div>
 
-      <h1 className='text-xl font-semibold mt-8 mb-4'>Configure response</h1>
+      <h1 className='mt-8 mb-4 text-xl font-semibold'>Configure response</h1>
 
       <div className='flex flex-col space-y-4'>
-        {formFields.map((field) => (
-          <div
-            key={field.id}
-            className='flex w-full items-center space-x-2'
-          >
-            <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
-              <Label htmlFor={`name-${field.id}`}>Field name</Label>
-              <Input
-                type='text'
-                onChange={(e) =>
-                  editField(field.id, e.target.value, field.method)
-                }
-                value={field.name}
-              />
-            </div>
-
-            <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
-              <Label htmlFor={`method-${field.id}`}>Method</Label>
-
-              <Popover
-                open={field.open}
-                onOpenChange={(isOpen) =>
-                  editField(field.id, undefined, undefined, undefined, isOpen)
-                }
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant='secondary'
-                    role='combobox'
-                    aria-expanded={field.open}
-                    className='max-w-[300px] justify-between'
-                  >
-                    {field.value
-                      ? unifiedMethods.find(
-                          (method) => method.value === field.value
-                        )?.label
-                      : "Select method..."}
-                    <ChevronsUpDown className='opacity-50' />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className='w-[300px] p-0'>
-                  <Command>
-                    <CommandInput placeholder='Search method...' />
-                    <CommandList>
-                      <CommandEmpty>No method found.</CommandEmpty>
-
-                      <CommandGroup>
-                        {unifiedMethods.map((method) => (
-                          <CommandItem
-                            key={method.value}
-                            value={method.value}
-                            onSelect={(currentValue) => {
-                              const newValue =
-                                currentValue === field.value
-                                  ? ""
-                                  : currentValue;
-
-                              editField(
-                                field.id,
-                                field.name,
-                                method.value,
-                                newValue,
-                                false
-                              );
-                            }}
-                          >
-                            {method.label}
-                            <Check
-                              className={cn(
-                                "ml-auto",
-                                field.value === method.value
-                                  ? "opacity-100"
-                                  : "opacity-0"
-                              )}
-                            />
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <Button
-              variant='secondary'
-              type='button'
-              className='self-end'
-              onClick={() => removeField(field.id)}
+        {formFields.map((field: FormField) => {
+          console.log("LOG | {formFields.map | field:", field);
+          return (
+            <div
+              key={field.id}
+              className='flex items-center w-full space-x-2'
             >
-              Remove
-            </Button>
-          </div>
-        ))}
+              <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
+                <Label htmlFor={`name-${field.id}`}>Field name</Label>
+                <Input
+                  type='text'
+                  onChange={(e) =>
+                    editField(field.id, e.target.value, field.method)
+                  }
+                  value={field.name}
+                />
+              </div>
+
+              <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
+                <Label htmlFor={`method-${field.id}`}>Method</Label>
+
+                <Popover
+                  open={field.open}
+                  onOpenChange={(isOpen) =>
+                    editField(field.id, undefined, undefined, undefined, isOpen)
+                  }
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant='secondary'
+                      role='combobox'
+                      aria-expanded={field.open}
+                      className='max-w-[300px] justify-between'
+                    >
+                      {field.value
+                        ? unifiedMethods.find(
+                            (method) => method.value === field.value
+                          )?.label
+                        : "Select method..."}
+                      <ChevronsUpDown className='opacity-50' />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className='w-[300px] p-0'>
+                    <Command>
+                      <CommandInput placeholder='Search method...' />
+                      <CommandList>
+                        <CommandEmpty>No method found.</CommandEmpty>
+
+                        <CommandGroup>
+                          {unifiedMethods.map((method) => (
+                            <CommandItem
+                              key={method.value}
+                              value={method.value}
+                              onSelect={(currentValue) => {
+                                const newValue =
+                                  currentValue === field.value
+                                    ? ""
+                                    : currentValue;
+
+                                editField(
+                                  field.id,
+                                  field.name,
+                                  method.value,
+                                  newValue,
+                                  false
+                                );
+                              }}
+                            >
+                              {method.label}
+                              <Check
+                                className={cn(
+                                  "ml-auto",
+                                  field.value === method.value
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                )}
+                              />
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <Button
+                variant='secondary'
+                type='button'
+                className='self-end'
+                onClick={() => removeField(field.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          );
+        })}
 
         {!formFields.length && (
           <Card className='w-full max-w-[300px] py-6'>
@@ -444,7 +503,7 @@ const Routes = ({ selectedRoute }: Props) => {
 
       {Object.keys(formattedJsonConfig).length > 0 && (
         <>
-          <h1 className='text-xl font-semibold mt-8'>Response example</h1>
+          <h1 className='mt-8 text-xl font-semibold'>Response example</h1>
 
           <SyntaxHighlighter
             language='json'
@@ -473,26 +532,26 @@ const Routes = ({ selectedRoute }: Props) => {
         </>
       )}
 
-      {/* <h1 className='text-xl font-semibold mt-8'>JSON Configuration</h1> */}
+      {/* <h1 className='mt-8 text-xl font-semibold'>JSON Configuration</h1> */}
 
       {/* <textarea
         value={JSON.stringify(formattedJsonConfig, null, 2)}
         onChange={(e) => setJsonFormConfig(e.target.value)}
         rows={10}
-        className='w-full mt-4 p-2 border rounded'
+        className='w-full p-2 mt-4 border rounded'
       ></textarea> */}
 
       {Object.keys(formattedJsonConfig).length > 0 && (
         <Button
           onClick={handleUpdate}
-          className='ml-auto mt-4 w-full'
+          className='w-full mt-4 ml-auto'
           variant='default'
         >
           Update route
         </Button>
       )}
       {/* 
-      <h1 className='text-xl font-semibold mt-8'>Generated Data</h1>
+      <h1 className='mt-8 text-xl font-semibold'>Generated Data</h1>
 
       <SyntaxHighlighter
         language='json'
