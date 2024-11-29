@@ -19,7 +19,15 @@ import { cn } from "@/lib/utils";
 import { RoutesResponse } from "@/RouteManager/RouteManager";
 import { faker } from "@faker-js/faker";
 import axios from "axios";
-import { Check, ChevronsUpDown, Lock, LockOpen } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  ListTree,
+  Lock,
+  LockOpen,
+  TextCursorInput,
+  Trash,
+} from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -30,7 +38,7 @@ import {
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export function useClickAway(cb) {
+function useClickAway(cb: (e: Event) => void) {
   const ref = useRef(null);
   const refCb = useRef(cb);
 
@@ -39,9 +47,9 @@ export function useClickAway(cb) {
   });
 
   useEffect(() => {
-    const handler = (e) => {
+    const handler = (e: Event) => {
       const element = ref.current;
-      if (element && !element.contains(e.target)) {
+      if (element && !(element as HTMLElement).contains(e.target as Node)) {
         refCb.current(e);
       }
     };
@@ -86,12 +94,13 @@ type Action =
     }
   | {
       type: "EDIT_FIELD";
-      payload: { id: string; name: string; method: string; value: string };
+      payload: { id: string; name?: string; method?: string; value?: string };
     }
   | { type: "REMOVE_FIELD"; payload: { id: string } }
   | { type: "CLEAR_FIELDS" };
 
 const Routes = ({ selectedRoute }: Props) => {
+  const [isValidToUpdate, setIsValidToUpdate] = useState(false);
   const [isRemoveEnabled, setIsRemoveEnabled] = useState(false);
 
   const ref = useClickAway(() => {
@@ -106,26 +115,26 @@ const Routes = ({ selectedRoute }: Props) => {
         );
 
         const routeConfig = data.find((route) => route.id === selectedRoute.id);
-        console.log("LOG | fetchRoutes | routeConfig:", routeConfig);
 
         // Response is {"a":"internet.username","b":"person.fullName","c":"internet.email"}
         // map it as [{name: "a", method: "internet.username"}, {name: "b", method: "person.fullName"}, {name: "c", method: "internet.email"}]
-        const formattedConfig = JSON.parse(routeConfig?.responseConfig!);
+        const formattedConfig = JSON.parse(routeConfig?.responseConfig || "{}");
 
         if (formattedConfig) {
           // clear all fields
           dispatch({ type: "CLEAR_FIELDS" });
 
           const formattedFields = Object.entries(formattedConfig).map(
-            ([name, method]) => ({
-              id: Math.random().toString(36).substring(7),
-              name,
-              method,
-              value: name,
-              open: false,
-            })
+            ([name, method]) => {
+              return {
+                id: Math.random().toString(36).substring(7),
+                name,
+                method: method as string,
+                value: name,
+                open: false,
+              };
+            }
           );
-          console.log("LOG | fetchRoutes | formattedFields:", formattedFields);
 
           // add every field to the formFields state
           formattedFields.forEach((field) => {
@@ -148,10 +157,10 @@ const Routes = ({ selectedRoute }: Props) => {
     const categories: { category: string; methods: string[] }[] = [];
 
     for (const category in faker) {
-      if (typeof faker[category] === "object") {
+      if (typeof faker[category as keyof typeof faker] === "object") {
         const methods: string[] = [];
 
-        for (const method in faker[category]) {
+        for (const method in faker[category as keyof typeof faker]) {
           if (typeof faker[category][method] === "function") {
             methods.push(method);
           }
@@ -309,8 +318,14 @@ const Routes = ({ selectedRoute }: Props) => {
     }
   };
 
-  // const [open, setOpen] = useState(false);
-  // const [value, setValue] = useState("");
+  // useEffect and function to check: if some of the fields or methods are empty, disable the update button
+  useEffect(() => {
+    const hasEmptyFields = formFields.some(
+      (field) => !field.name || !field.method
+    );
+
+    setIsValidToUpdate(!hasEmptyFields);
+  }, [formFields]);
 
   return (
     <div className='p-4 pl-8 w-full max-w-[920px]'>
@@ -357,133 +372,119 @@ const Routes = ({ selectedRoute }: Props) => {
               Remove route
             </Button>
           </div>
-          {/* 
-          {!isRemoveEnabled && (
-            <Button
-              variant='outline'
-              className='p-3 mt-4 border-red-500'
-              onClick={() => setIsRemoveEnabled(true)}
-            >
-              <Lock className='' />
-              Remove route
-            </Button>
-          )}
-
-          {isRemoveEnabled && (
-            <Button
-              variant='destructive'
-              className='mt-4'
-              onClick={() => {
-                axios.delete(`http://localhost:3000/api/${selectedRoute.id}`);
-              }}
-            >
-              <TriangleAlert className='mr-2' />
-              Confirm remove
-            </Button>
-          )} */}
         </div>
       </div>
 
       <h1 className='mt-8 mb-4 text-xl font-semibold'>Configure response</h1>
 
       <div className='flex flex-col space-y-4'>
-        {formFields.map((field: FormField) => {
-          console.log("LOG | {formFields.map | field:", field);
-          return (
-            <div
-              key={field.id}
-              className='flex items-center w-full space-x-2'
-            >
-              <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
-                <Label htmlFor={`name-${field.id}`}>Field name</Label>
-                <Input
-                  type='text'
-                  onChange={(e) =>
-                    editField(field.id, e.target.value, field.method)
-                  }
-                  value={field.name}
-                />
-              </div>
-
-              <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
-                <Label htmlFor={`method-${field.id}`}>Method</Label>
-
-                <Popover
-                  open={field.open}
-                  onOpenChange={(isOpen) =>
-                    editField(field.id, undefined, undefined, undefined, isOpen)
-                  }
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant='secondary'
-                      role='combobox'
-                      aria-expanded={field.open}
-                      className='max-w-[300px] justify-between'
-                    >
-                      {field.value
-                        ? unifiedMethods.find(
-                            (method) => method.value === field.value
-                          )?.label
-                        : "Select method..."}
-                      <ChevronsUpDown className='opacity-50' />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className='w-[300px] p-0'>
-                    <Command>
-                      <CommandInput placeholder='Search method...' />
-                      <CommandList>
-                        <CommandEmpty>No method found.</CommandEmpty>
-
-                        <CommandGroup>
-                          {unifiedMethods.map((method) => (
-                            <CommandItem
-                              key={method.value}
-                              value={method.value}
-                              onSelect={(currentValue) => {
-                                const newValue =
-                                  currentValue === field.value
-                                    ? ""
-                                    : currentValue;
-
-                                editField(
-                                  field.id,
-                                  field.name,
-                                  method.value,
-                                  newValue,
-                                  false
-                                );
-                              }}
-                            >
-                              {method.label}
-                              <Check
-                                className={cn(
-                                  "ml-auto",
-                                  field.value === method.value
-                                    ? "opacity-100"
-                                    : "opacity-0"
-                                )}
-                              />
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <Button
-                variant='secondary'
-                type='button'
-                className='self-end'
-                onClick={() => removeField(field.id)}
+        {formFields.length > 0 &&
+          formFields.map((field: FormField) => {
+            return (
+              <div
+                key={field.id}
+                className='flex items-center w-full space-x-2'
               >
-                Remove
-              </Button>
-            </div>
-          );
-        })}
+                <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
+                  <Label htmlFor={`name-${field.id}`}>Field name</Label>
+                  <Input
+                    type='text'
+                    onChange={(e) =>
+                      editField(field.id, e.target.value, field.method)
+                    }
+                    value={field.name}
+                  />
+                </div>
+
+                <div className='flex flex-col space-y-2 max-w-[300px] w-full'>
+                  <Label htmlFor={`method-${field.id}`}>Method</Label>
+
+                  <Popover
+                    open={field.open}
+                    onOpenChange={(isOpen) =>
+                      editField(
+                        field.id,
+                        field.name,
+                        field.method,
+                        field.value,
+                        isOpen
+                      )
+                    }
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant='secondary'
+                        role='combobox'
+                        aria-expanded={field.open}
+                        className='max-w-[300px] justify-between'
+                      >
+                        {field.value
+                          ? unifiedMethods.find(
+                              (method) => method.value === field.method
+                            )?.label
+                          : "Select method..."}
+                        <ChevronsUpDown className='opacity-50' />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className='w-[300px] p-0'>
+                      <Command>
+                        <CommandInput placeholder='Search method...' />
+                        <CommandList>
+                          <CommandEmpty>No method found.</CommandEmpty>
+
+                          <CommandGroup>
+                            {unifiedMethods.map((method) => (
+                              <CommandItem
+                                key={method.value}
+                                value={method.value}
+                                onSelect={(currentValue) => {
+                                  const newValue =
+                                    currentValue === field.value
+                                      ? ""
+                                      : currentValue;
+
+                                  editField(
+                                    field.id,
+                                    field.name,
+                                    method.value,
+                                    newValue,
+                                    false
+                                  );
+                                }}
+                              >
+                                {method.label}
+                                <Check
+                                  className={cn(
+                                    "ml-auto",
+                                    field.value === method.value
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* // if more than one field, show remove button */}
+                {formFields.length > 1 && (
+                  <Button
+                    variant='outline'
+                    type='button'
+                    className='self-end border-red-500'
+                    onClick={() => removeField(field.id)}
+                  >
+                    <Trash />
+                    Remove
+                  </Button>
+                )}
+              </div>
+            );
+          })}
 
         {!formFields.length && (
           <Card className='w-full max-w-[300px] py-6'>
@@ -491,14 +492,26 @@ const Routes = ({ selectedRoute }: Props) => {
           </Card>
         )}
 
-        <Button
-          variant='secondary'
-          type='button'
-          className='max-w-[300px] w-full mt-4'
-          onClick={() => addField("", "")}
-        >
-          Add new field
-        </Button>
+        <div className='flex space-x-2'>
+          <Button
+            variant='secondary'
+            type='button'
+            className='max-w-[300px] w-full mt-4'
+            onClick={() => addField("", "")}
+          >
+            <TextCursorInput />
+            Add new field
+          </Button>
+          <Button
+            variant='secondary'
+            type='button'
+            className='max-w-[300px] w-full mt-4'
+            onClick={() => addField("", "")}
+          >
+            <ListTree />
+            Add new subkey
+          </Button>
+        </div>
       </div>
 
       {Object.keys(formattedJsonConfig).length > 0 && (
@@ -546,6 +559,7 @@ const Routes = ({ selectedRoute }: Props) => {
           onClick={handleUpdate}
           className='w-full mt-4 ml-auto'
           variant='default'
+          disabled={!isValidToUpdate}
         >
           Update route
         </Button>
